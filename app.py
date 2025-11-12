@@ -4,7 +4,9 @@ import time
 import struct
 import numpy as np
 import pyqtgraph as pg
+from datetime import datetime
 from PyQt6 import QtWidgets, QtCore, QtGui
+from predictModel import previsao
 
 COM_PORT = 'COM8'
 BAUD_RATE = 115200
@@ -29,6 +31,7 @@ def processamento(data_buffer):
 
 class SerialWorker(QtCore.QObject):
     dataReady = QtCore.pyqtSignal(np.ndarray, np.ndarray, np.ndarray)
+    predictionReady = QtCore.pyqtSignal(str, str)
     errorOccurred = QtCore.pyqtSignal(str)
 
     def __init__(self):
@@ -38,6 +41,7 @@ class SerialWorker(QtCore.QObject):
         self.data_buffer_y = np.zeros(BUFFER_SIZE, dtype=np.float64)
         self.data_buffer_z = np.zeros(BUFFER_SIZE, dtype=np.float64)
         self.current_index = 0
+        self.data_sample = []
         self.ser = None
 
     def stop(self):
@@ -70,7 +74,7 @@ class SerialWorker(QtCore.QObject):
                 if len(data) == 12:
                     x, y, z = struct.unpack('<3f', data)
                     valor_x, valor_y, valor_z = x/9.80665, y/9.80665, z/9.80665
-                    print(f"X: {valor_x}, Y: {valor_y}, Z: {valor_z}")
+                    #print(f"X: {valor_x}, Y: {valor_y}, Z: {valor_z}")
 
                     if self.current_index < BUFFER_SIZE:
                         self.data_buffer_x[self.current_index] = valor_x
@@ -78,11 +82,25 @@ class SerialWorker(QtCore.QObject):
                         self.data_buffer_z[self.current_index] = valor_z
                         self.current_index+=1
 
-                    elif self.current_index == BUFFER_SIZE:
+                    if self.current_index >= BUFFER_SIZE:
                         self.current_index = 0
-                        fft_mags_x = processamento(self.data_buffer_x)
-                        fft_mags_y = processamento(self.data_buffer_y)
-                        fft_mags_z = processamento(self.data_buffer_z)
+                        fft_mags_x = processamento(self.data_buffer_x)[1:]
+                        fft_mags_y = processamento(self.data_buffer_y)[1:]
+                        fft_mags_z = processamento(self.data_buffer_z)[1:]
+
+                        self.data_sample.append(list(fft_mags_y))
+
+                        if len(self.data_sample) == 15:
+                            buffer = self.data_buffer_y
+                            buffer_ac = buffer - np.mean(buffer)
+                            rms = np.sqrt(np.mean(np.square(buffer_ac)))
+                            hora = datetime.now().strftime("%H:%M:%S")
+                            if rms < 0.02:
+                                self.predictionReady.emit("Máquina parada - estado normal", hora)
+                            else:
+                                self.predictionReady.emit(previsao(self.data_sample), hora)
+
+                            self.data_sample = []
 
                         self.dataReady.emit(fft_mags_x, fft_mags_y, fft_mags_z)
 
@@ -128,7 +146,14 @@ class VibrationAnalyzer(QtWidgets.QMainWindow):
         self.graph_layout = QtWidgets.QVBoxLayout(self.graph_container)
         self.main_layout.addWidget(self.graph_container)
 
-        self.freq_axis = np.fft.rfftfreq(BUFFER_SIZE, d=1.0 / SAMPLE_RATE)
+        self.result_label = QtWidgets.QLabel("Aguardando dados...")
+        font = self.result_label.font()
+        font.setPointSize(14)
+        self.result_label.setFont(font)
+        self.result_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+        self.main_layout.addWidget(self.result_label)
+
+        self.freq_axis = np.fft.rfftfreq(BUFFER_SIZE, d=1.0 / SAMPLE_RATE)[1:]
 
         self.thread = None
         self.worker = None
@@ -139,13 +164,13 @@ class VibrationAnalyzer(QtWidgets.QMainWindow):
         self.start_button.setText("Monitorando...")
 
         #Cria os 3 gráficos e adiciona ao layout
-        self.plot_x, self.line_x = self.create_plot("Eixo X", color = '#FF4136')
+        #self.plot_x, self.line_x = self.create_plot("Eixo X", color = '#FF4136')
         self.plot_y, self.line_y = self.create_plot("Eixo Y", color = '#2ECC40')
-        self.plot_z, self.line_z = self.create_plot("Eixo Z", color = '#0074D9')
+        #self.plot_z, self.line_z = self.create_plot("Eixo Z", color = '#0074D9')
 
-        self.graph_layout.addWidget(self.plot_x)
+        #self.graph_layout.addWidget(self.plot_x)
         self.graph_layout.addWidget(self.plot_y)
-        self.graph_layout.addWidget(self.plot_z)
+        #self.graph_layout.addWidget(self.plot_z)
         
         #Configura e inicia a thread
         self.thread = QtCore.QThread()
@@ -157,15 +182,26 @@ class VibrationAnalyzer(QtWidgets.QMainWindow):
         self.worker.dataReady.connect(self.update_graphs)
         self.worker.errorOccurred.connect(self.show_error)
 
+        self.worker.predictionReady.connect(self.update_prediction_label)
+
         #Inicia a thread
         self.thread.start()
 
     @QtCore.pyqtSlot(np.ndarray, np.ndarray, np.ndarray)
     def update_graphs(self, fft_mags_x, fft_mags_y, fft_mags_z):
-        if len(self.freq_axis) == len(fft_mags_x):
-            self.line_x.setData(self.freq_axis, fft_mags_x)
+        if len(self.freq_axis) == len(fft_mags_y):
+            #self.line_x.setData(self.freq_axis, fft_mags_x)
             self.line_y.setData(self.freq_axis, fft_mags_y)
-            self.line_z.setData(self.freq_axis, fft_mags_z)
+            #self.line_z.setData(self.freq_axis, fft_mags_z)
+
+    @QtCore.pyqtSlot(str, str)
+    def update_prediction_label(self,texto, hora):
+        if "parada" in texto.lower():
+            cor = "#00FF00"
+        else:
+            cor = "#FF3333"
+        self.result_label.setStyleSheet(f"color: {cor}; font-size: 18px;")
+        self.result_label.setText(f"[{hora}] {texto}")
 
     def create_plot(self, title, color):
         plot_widget = pg.PlotWidget()

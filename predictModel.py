@@ -5,6 +5,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score
+from collections import Counter
 
 df_sample = pd.read_csv('./sample_data/dataset_de_features.csv')
 df_sample.info()
@@ -50,8 +51,13 @@ y_pred = rf2.predict(X_test_sel)
 accuracy = accuracy_score(y_test, y_pred)
 print(f"Accuracy of the model: {accuracy *100:.2f}%")
 
-'''def previsao(dados):
+def previsao(dados):
     X_data = scaler.transform(dados)
     X_data_sel = X_data[:, idx]
-    y_pred_data = rf2.predict()
-'''
+    y_pred_data = rf2.predict(X_data_sel)
+    contagem = Counter(y_pred_data)
+    probs = rf2.predict_proba(X_data_sel)
+    confidence = np.max(probs) * 100
+    resultado = f"Erro provável: {contagem.most_common(1)[0][0]} ; confiança = {confidence:.2f}%"
+    return resultado
+
