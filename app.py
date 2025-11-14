@@ -9,7 +9,7 @@ from PyQt6 import QtWidgets, QtCore, QtGui
 from predictModel import previsao
 
 COM_PORT = 'COM8'
-BAUD_RATE = 115200
+BAUD_RATE = 921600
 BUFFER_SIZE = 2048
 SAMPLE_RATE = 1000
 
@@ -42,6 +42,7 @@ class SerialWorker(QtCore.QObject):
         self.data_buffer_z = np.zeros(BUFFER_SIZE, dtype=np.float64)
         self.current_index = 0
         self.data_sample = []
+        self.predictingFlag = False
         self.ser = None
 
     def stop(self):
@@ -56,9 +57,10 @@ class SerialWorker(QtCore.QObject):
             print("Worker: Esperando o ESP 32...")
             while self._is_running:
                 line = self.ser.readline().decode('utf-8').strip()
+                print(line)
                 if line == 'PRONTO':
                     print("Worker: ESP32 pronto!")
-                    self.ser.write(b'START\n')
+                    self.ser.write(b'S')
                     break
                 elif not self._is_running:
                     if self.ser and self.ser.is_open:
@@ -73,7 +75,7 @@ class SerialWorker(QtCore.QObject):
 
                 if len(data) == 12:
                     x, y, z = struct.unpack('<3f', data)
-                    valor_x, valor_y, valor_z = x/9.80665, y/9.80665, z/9.80665
+                    valor_x, valor_y, valor_z = x, y, z
                     #print(f"X: {valor_x}, Y: {valor_y}, Z: {valor_z}")
 
                     if self.current_index < BUFFER_SIZE:
@@ -88,9 +90,12 @@ class SerialWorker(QtCore.QObject):
                         fft_mags_y = processamento(self.data_buffer_y)[1:]
                         fft_mags_z = processamento(self.data_buffer_z)[1:]
 
-                        self.data_sample.append(list(fft_mags_y))
+                        self.dataReady.emit(fft_mags_x, fft_mags_y, fft_mags_z)
+
+                        if len(self.data_sample) < 15 and not self.predictingFlag: self.data_sample.append(list(fft_mags_y))
 
                         if len(self.data_sample) == 15:
+                            self.predictingFlag = True
                             buffer = self.data_buffer_y
                             buffer_ac = buffer - np.mean(buffer)
                             rms = np.sqrt(np.mean(np.square(buffer_ac)))
@@ -101,12 +106,12 @@ class SerialWorker(QtCore.QObject):
                                 self.predictionReady.emit(previsao(self.data_sample), hora)
 
                             self.data_sample = []
+                            self.predictingFlag = False
 
-                        self.dataReady.emit(fft_mags_x, fft_mags_y, fft_mags_z)
 
             print("Worker: Loop encerrado. Enviando comando CLOSE...")
             if self.ser and self.ser.is_open:
-                self.ser.write(b'CLOSE\n')
+                self.ser.write(b'C')
                 self.ser.flush()
 
         except serial.SerialException as e:
@@ -197,7 +202,7 @@ class VibrationAnalyzer(QtWidgets.QMainWindow):
     @QtCore.pyqtSlot(str, str)
     def update_prediction_label(self,texto, hora):
         if "parada" in texto.lower():
-            cor = "#00FF00"
+            cor = "#00A300"
         else:
             cor = "#FF3333"
         self.result_label.setStyleSheet(f"color: {cor}; font-size: 18px;")
