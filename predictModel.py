@@ -69,7 +69,7 @@ def erroLabel(erro):
     if '021' in erro: diametroFalha = '0.021 polegadas'
     if '028' in erro: diametroFalha = '0.028 polegadas'
     cargaMotor = erro[indexUnderscore:]
-    return f"ERRO PROVÁVEL: {erroProv} | DIAMETRO DA FALHA: {diametroFalha} | CARGA DO MOTOR: {cargaMotor[1]}"
+    return erroProv, diametroFalha, cargaMotor[1]
     
 def previsao(dados):
     X_data = scaler.transform(dados)
@@ -78,6 +78,8 @@ def previsao(dados):
     contagem = Counter(y_pred_data)
     probs = rf2.predict_proba(X_data_sel)
     confidence = np.max(probs) * 100
-    resultado = f"{erroLabel(contagem.most_common(1)[0][0])} ; confiança = {confidence:.2f}%"
+    resultado = []
+    resultado.append(erroLabel(contagem.most_common(1)[0][0]))
+    resultado.append(f"{confidence:.2f}%")
     return resultado
 

@@ -5,7 +5,7 @@ import struct
 import numpy as np
 import pyqtgraph as pg
 from datetime import datetime
-from PyQt6 import QtWidgets, QtCore, QtGui
+from PyQt6 import QtWidgets, QtCore, uic
 from predictModel import previsao
 
 COM_PORT = 'COM8'
@@ -31,7 +31,7 @@ def processamento(data_buffer):
 
 class SerialWorker(QtCore.QObject):
     dataReady = QtCore.pyqtSignal(np.ndarray, np.ndarray, np.ndarray)
-    predictionReady = QtCore.pyqtSignal(str, str)
+    predictionReady = QtCore.pyqtSignal(str,str, str, str, str)
     errorOccurred = QtCore.pyqtSignal(str)
 
     def __init__(self):
@@ -101,9 +101,10 @@ class SerialWorker(QtCore.QObject):
                             rms = np.sqrt(np.mean(np.square(buffer_ac)))
                             hora = datetime.now().strftime("%H:%M:%S")
                             if rms < 0.02:
-                                self.predictionReady.emit("Máquina parada - estado normal", hora)
+                                self.predictionReady.emit("Máquina parada", "Máquina parada", "Máquina parada", "Máquina parada", hora)
                             else:
-                                self.predictionReady.emit(previsao(self.data_sample), hora)
+                                predict = previsao(self.data_sample)
+                                self.predictionReady.emit(predict[0][0], predict[0][1], predict[0][2], predict[1], hora)
 
                             self.data_sample = []
                             self.predictingFlag = False
@@ -125,72 +126,63 @@ class VibrationAnalyzer(QtWidgets.QMainWindow):
     def __init__(self):
         super().__init__()
 
-        self.setWindowTitle("Monitorador de Vibração (3 eixos)")
-        self.setGeometry(100, 100, 1000, 800)
+        uic.loadUi("mainwindow.ui", self)   # <<-- carregando sua UI
 
-        #Configurações do PyQtGraph
         pg.setConfigOption('background', '#111')
         pg.setConfigOption('foreground', 'w')
         pg.setConfigOption('antialias', True)
 
-        #Layout principal
-        self.central_widget = QtWidgets.QWidget()
-        self.setCentralWidget(self.central_widget)
-        self.main_layout = QtWidgets.QVBoxLayout(self.central_widget)
+        self.grafico_widget: QtWidgets.QWidget = self.findChild(QtWidgets.QWidget, "widgetGrafico")
 
-        #Botão de iniciar
-        self.start_button = QtWidgets.QPushButton("Iniciar monitoramento")
-        font = self.start_button.font()
-        font.setPointSize(16)
-        self.start_button.setFont(font)
+        # Remove label interna (Aguardando dados)
+        self.labelAguardando = self.findChild(QtWidgets.QLabel, "labelAguardando")
+        if self.labelAguardando:
+            self.labelAguardando.hide()
+
+        # Criamos um layout no widget do designer
+        self.graph_layout = QtWidgets.QVBoxLayout(self.grafico_widget)
+        self.grafico_widget.setLayout(self.graph_layout)
+
+        # BOTÃO DO DESIGNER
+        self.start_button = self.findChild(QtWidgets.QPushButton, "start_button")
         self.start_button.clicked.connect(self.start_monitoring)
-        self.main_layout.addWidget(self.start_button)
 
-        #Container para os gráficos (incialmente vazio)
-        self.graph_container = QtWidgets.QWidget()
-        self.graph_layout = QtWidgets.QVBoxLayout(self.graph_container)
-        self.main_layout.addWidget(self.graph_container)
+        # LABEL DO RESULTADO (também pega do Designer5
+        self.textHora = self.findChild(QtWidgets.QTextBrowser, "textBrowser")
+        self.textFalha = self.findChild(QtWidgets.QTextBrowser, "textBrowser_2")
+        self.textDimFalha = self.findChild(QtWidgets.QTextBrowser, "textBrowser_3")
+        self.textCarga = self.findChild(QtWidgets.QTextBrowser, "textBrowser_7")
+        self.textProb = self.findChild(QtWidgets.QTextBrowser, "textBrowser_8")
+        #self.result_label.setText("Aguardando dados...")
 
-        self.result_label = QtWidgets.QLabel("Aguardando dados...")
-        font = self.result_label.font()
-        font.setPointSize(14)
-        self.result_label.setFont(font)
-        self.result_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
-        self.main_layout.addWidget(self.result_label)
-
+        # Frequências para FFT
         self.freq_axis = np.fft.rfftfreq(BUFFER_SIZE, d=1.0 / SAMPLE_RATE)[1:]
 
         self.thread = None
         self.worker = None
 
     def start_monitoring(self):
-        #Desativa o botão
         self.start_button.setEnabled(False)
         self.start_button.setText("Monitorando...")
 
-        #Cria os 3 gráficos e adiciona ao layout
-        #self.plot_x, self.line_x = self.create_plot("Eixo X", color = '#FF4136')
-        self.plot_y, self.line_y = self.create_plot("Eixo Y", color = '#2ECC40')
-        #self.plot_z, self.line_z = self.create_plot("Eixo Z", color = '#0074D9')
+        # Criar apenas o gráfico Y
+        self.plot_y, self.line_y = self.create_plot("Eixo Y", color="#2ECC40")
 
-        #self.graph_layout.addWidget(self.plot_x)
+        # Adicionar no layout do widget criado no DESIGNER
         self.graph_layout.addWidget(self.plot_y)
-        #self.graph_layout.addWidget(self.plot_z)
-        
-        #Configura e inicia a thread
+
+        # THREAD SERIAL
         self.thread = QtCore.QThread()
         self.worker = SerialWorker()
         self.worker.moveToThread(self.thread)
 
-        #Conecta os sinais da thread às funções da interface
         self.thread.started.connect(self.worker.run)
         self.worker.dataReady.connect(self.update_graphs)
         self.worker.errorOccurred.connect(self.show_error)
-
         self.worker.predictionReady.connect(self.update_prediction_label)
 
-        #Inicia a thread
         self.thread.start()
+
 
     @QtCore.pyqtSlot(np.ndarray, np.ndarray, np.ndarray)
     def update_graphs(self, fft_mags_x, fft_mags_y, fft_mags_z):
@@ -199,14 +191,28 @@ class VibrationAnalyzer(QtWidgets.QMainWindow):
             self.line_y.setData(self.freq_axis, fft_mags_y)
             #self.line_z.setData(self.freq_axis, fft_mags_z)
 
-    @QtCore.pyqtSlot(str, str)
-    def update_prediction_label(self,texto, hora):
-        if "parada" in texto.lower():
+    @QtCore.pyqtSlot(str, str, str, str, str)
+    def update_prediction_label(self,textoFalha, textoDimFalha, textoCarga, textoProb, hora):
+        if "parada" in textoFalha.lower():
             cor = "#00A300"
         else:
             cor = "#FF3333"
-        self.result_label.setStyleSheet(f"color: {cor}; font-size: 18px;")
-        self.result_label.setText(f"[{hora}] {texto}")
+        #self.result_label.setStyleSheet(f"color: {cor}; font-size: 10px;")
+        #self.result_label.setText(f"[{hora}] {texto}")
+        self.textHora.setStyleSheet(f"color: {cor}; font-size: 15px;")
+        self.textHora.setText(f"{hora}")
+
+        self.textFalha.setStyleSheet(f"color: {cor}; font-size: 15px;")
+        self.textFalha.setText(f"{textoFalha}")
+
+        self.textDimFalha.setStyleSheet(f"color: {cor}; font-size: 15px;")
+        self.textDimFalha.setText(f"{textoDimFalha}")
+
+        self.textCarga.setStyleSheet(f"color: {cor}; font-size: 15px;")
+        self.textCarga.setText(f"{textoCarga}")
+
+        self.textProb.setStyleSheet(f"color: {cor}; font-size: 15px;")
+        self.textProb.setText(f"{textoProb}")
 
     def create_plot(self, title, color):
         plot_widget = pg.PlotWidget()
