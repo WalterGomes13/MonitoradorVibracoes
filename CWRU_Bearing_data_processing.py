@@ -9,7 +9,7 @@ from pathlib import Path
 from scipy import signal
 
 taxa_original = 12000
-taxa_alvo = 1000
+taxa_alvo = 1600
 """
 df = pd.DataFrame(columns=['DE_data', 'fault'])
 
