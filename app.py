@@ -11,7 +11,7 @@ from predictModel import previsao
 COM_PORT = 'COM8'
 BAUD_RATE = 921600
 BUFFER_SIZE = 2048
-SAMPLE_RATE = 1000
+SAMPLE_RATE = 1600
 
 def processamento(data_buffer):
     N = len(data_buffer)
