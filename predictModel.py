@@ -51,13 +51,11 @@ rf2 = RandomForestClassifier(
 rf2.fit(X_train_sel, y_train)
 y_pred = rf2.predict(X_test_sel)
 
-# NOVO: métricas (média macro: cada classe tem o mesmo peso)
 accuracy  = accuracy_score(y_test, y_pred)
 precision = precision_score(y_test, y_pred, average='macro', zero_division=0)
 recall    = recall_score(y_test, y_pred, average='macro', zero_division=0)
 f1        = f1_score(y_test, y_pred, average='macro', zero_division=0)
 
-# NOVO: agrupa os rótulos por tipo de falha e por severidade (mesma lógica do erroLabel)
 def tipo_falha(label):
     if 'n' in label: return 'Normal'
     if 'B' in label: return 'Bola'
@@ -71,7 +69,6 @@ def severidade(label):
             return tamanho
     return 'saudável'
 
-# NOVO: avaliação completa, executada só quando o arquivo é rodado diretamente
 def avaliar_modelo():
     print("=== Todas as classes ===")
     print(f"Acurácia : {accuracy*100:.2f}%")
@@ -150,6 +147,5 @@ def previsao(dados):
     resultado.append(f"{confidence:.2f}%")
     return resultado
 
-# NOVO
 if __name__ == '__main__':
     avaliar_modelo()
