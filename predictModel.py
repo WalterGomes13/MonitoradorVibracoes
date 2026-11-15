@@ -6,7 +6,7 @@ from sklearn.preprocessing import MinMaxScaler
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import (accuracy_score, precision_score, recall_score,
                              f1_score, classification_report,
-                             confusion_matrix, ConfusionMatrixDisplay)   # NOVO
+                             confusion_matrix, ConfusionMatrixDisplay)
 from collections import Counter
 
 df_sample = pd.read_csv('./sample_data/dataset_de_features.csv')
