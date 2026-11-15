@@ -4,7 +4,9 @@ import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import accuracy_score
+from sklearn.metrics import (accuracy_score, precision_score, recall_score,
+                             f1_score, classification_report,
+                             confusion_matrix, ConfusionMatrixDisplay)   # NOVO
 from collections import Counter
 
 df_sample = pd.read_csv('./sample_data/dataset_de_features.csv')
@@ -48,8 +50,67 @@ rf2 = RandomForestClassifier(
 
 rf2.fit(X_train_sel, y_train)
 y_pred = rf2.predict(X_test_sel)
-accuracy = accuracy_score(y_test, y_pred)
-#print(f"Accuracy of the model: {accuracy *100:.2f}%")
+
+# NOVO: métricas (média macro: cada classe tem o mesmo peso)
+accuracy  = accuracy_score(y_test, y_pred)
+precision = precision_score(y_test, y_pred, average='macro', zero_division=0)
+recall    = recall_score(y_test, y_pred, average='macro', zero_division=0)
+f1        = f1_score(y_test, y_pred, average='macro', zero_division=0)
+
+# NOVO: agrupa os rótulos por tipo de falha e por severidade (mesma lógica do erroLabel)
+def tipo_falha(label):
+    if 'n' in label: return 'Normal'
+    if 'B' in label: return 'Bola'
+    if 'I' in label: return 'Pista interna'
+    if 'O' in label: return 'Pista externa'
+    return 'Desconhecido'
+
+def severidade(label):
+    for tamanho in ('007', '014', '021', '028'):
+        if tamanho in label:
+            return tamanho
+    return 'saudável'
+
+# NOVO: avaliação completa, executada só quando o arquivo é rodado diretamente
+def avaliar_modelo():
+    print("=== Todas as classes ===")
+    print(f"Acurácia : {accuracy*100:.2f}%")
+    print(f"Precisão : {precision*100:.2f}% (média macro)")
+    print(f"Recall   : {recall*100:.2f}% (média macro)")
+    print(f"F1-score : {f1*100:.2f}% (média macro)")
+    print(classification_report(y_test, y_pred, zero_division=0))
+
+    # matriz de confusão completa, normalizada pela classe real
+    cm = confusion_matrix(y_test, y_pred, labels=rf2.classes_, normalize='true')
+    fig, ax = plt.subplots(figsize=(14, 14))
+    ConfusionMatrixDisplay(cm, display_labels=rf2.classes_).plot(
+        ax=ax, include_values=False, xticks_rotation=90, cmap='Blues')
+    ax.set_title('Matriz de confusão normalizada (todas as classes)')
+    plt.tight_layout()
+    plt.savefig('matriz_confusao_classes.png', dpi=300)
+
+    # por tipo de falha
+    y_pred_s = pd.Series(y_pred, index=y_test.index)
+    tipo_real = y_test.apply(tipo_falha)
+    tipo_pred = y_pred_s.apply(tipo_falha)
+    tipos = ['Normal', 'Bola', 'Pista interna', 'Pista externa']
+
+    print("=== Por tipo de falha ===")
+    print(classification_report(tipo_real, tipo_pred, labels=tipos, zero_division=0))
+
+    cm_tipo = confusion_matrix(tipo_real, tipo_pred, labels=tipos)
+    fig, ax = plt.subplots(figsize=(6, 6))
+    ConfusionMatrixDisplay(cm_tipo, display_labels=tipos).plot(
+        ax=ax, cmap='Blues', values_format='d', colorbar=False)
+    ax.set_title('Matriz de confusão por tipo de falha')
+    plt.tight_layout()
+    plt.savefig('matriz_confusao_tipo.png', dpi=300)
+
+    # por severidade (diâmetro do defeito)
+    print("=== Por severidade (diâmetro) ===")
+    print(classification_report(y_test.apply(severidade), y_pred_s.apply(severidade),
+                                zero_division=0))
+    plt.show()
 
 def erroLabel(erro):
     print(erro)
@@ -83,3 +144,6 @@ def previsao(dados):
     resultado.append(f"{confidence:.2f}%")
     return resultado
 
+# NOVO
+if __name__ == '__main__':
+    avaliar_modelo()
