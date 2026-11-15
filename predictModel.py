@@ -138,9 +138,15 @@ def previsao(dados):
     y_pred_data = rf2.predict(X_data_sel)
     contagem = Counter(y_pred_data)
     probs = rf2.predict_proba(X_data_sel)
-    confidence = np.max(probs) * 100
+
+    # classe vencedora pela votação majoritária entre as janelas
+    classe_vencedora = contagem.most_common(1)[0][0]
+
+    # confiança: probabilidade média da classe vencedora nas janelas em que ela venceu
+    col = list(rf2.classes_).index(classe_vencedora)
+    confidence = probs[y_pred_data == classe_vencedora, col].mean() * 100
     resultado = []
-    resultado.append(erroLabel(contagem.most_common(1)[0][0]))
+    resultado.append(erroLabel(classe_vencedora))
     resultado.append(f"{confidence:.2f}%")
     return resultado
 
